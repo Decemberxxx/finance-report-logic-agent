@@ -1,0 +1,101 @@
+# -*- coding: utf-8 -*-
+"""
+金融研报 → 一页投资逻辑图 Agent
+完整版 | 直接运行 | 自动生成可视化思维导图
+"""
+import os
+import pdfplumber
+from openai import OpenAI
+
+# ====================== 【唯一需要修改的配置】 ======================
+# 1. 填写你的 OpenAI API Key
+OPENAI_API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# 2. 填写你的研报PDF路径（直接把PDF和这个代码放同一个文件夹）
+REPORT_FILE_PATH = "研报.pdf"
+# ==================================================================
+
+class FinanceReportLogicAgent:
+    def __init__(self):
+        # 初始化AI客户端
+        self.client = OpenAI(api_key=OPENAI_API_KEY)
+        # 投研标准7大维度（行业通用）
+        self.standard_fields = [
+            "核心标的（公司+股票代码）",
+            "所属行业/细分赛道",
+            "核心投资逻辑（3条）",
+            "利好因素（行业/公司）",
+            "潜在风险（政策/经营/市场）",
+            "估值与核心财务指标",
+            "投资结论（评级+目标价+建议）"
+        ]
+
+    def extract_pdf_content(self, pdf_path):
+        """提取PDF研报纯文本"""
+        full_text = ""
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        full_text += text + "\n"
+            print(f"✅ 研报读取成功 | 总字数：{len(full_text)}")
+            return full_text.strip()
+        except Exception as e:
+            print(f"❌ 研报读取失败：{str(e)}")
+            return ""
+
+    def ai_extract_core_logic(self, report_text):
+        """AI提取核心投资逻辑（严格结构化）"""
+        if not report_text:
+            return "读取研报失败，无有效内容"
+
+        prompt = f"""
+        你是专业券商金融分析师，任务：从研报中提取【一页投资逻辑】
+        严格按照以下7个维度输出，**极度精简、无废话、短句输出**
+        禁止修改标题，禁止打乱顺序，禁止多余内容：
+
+        核心标的：
+        所属行业/赛道：
+        核心投资逻辑：
+        利好因素：
+        潜在风险：
+        估值与财务：
+        投资结论：
+
+        研报内容（限8000字）：
+        {report_text[:8000]}
+        """
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1
+            )
+            result = response.choices[0].message.content
+            print("✅ AI核心逻辑提取完成")
+            return result
+        except Exception as e:
+            print(f"❌ AI提取失败：{str(e)}")
+            return "AI处理异常"
+
+    def generate_mermaid_map(self, logic_text):
+        """自动生成标准Mermaid思维导图（一键可视化）"""
+        mermaid_code = f"""
+```mermaid
+mindmap
+  root((一页投资逻辑))
+    核心标的
+      {self._get_line_content(logic_text, "核心标的")}
+    行业/赛道
+      {self._get_line_content(logic_text, "所属行业/赛道")}
+    核心投资逻辑
+      {self._get_line_content(logic_text, "核心投资逻辑").replace('，', '\n      ').replace('、', '\n      ')}
+    利好因素
+      {self._get_line_content(logic_text, "利好因素").replace('，', '\n      ').replace('、', '\n      ')}
+    潜在风险
+      {self._get_line_content(logic_text, "潜在风险").replace('，', '\n      ').replace('、', '\n      ')}
+    估值与财务
+      {self._get_line_content(logic_text, "估值与财务")}
+    投资结论
+      {self._get_line_content(logic_text, "投资结论")}
